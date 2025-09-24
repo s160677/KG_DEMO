@@ -16,14 +16,14 @@ st.set_page_config(
     layout="wide"
 )
 
-# load environment variables
-load_dotenv()
+# load environment variables locally
+# load_dotenv()
 
 # Neo4j connection configuration
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USER = os.getenv("NEO4J_USER")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")
+NEO4J_URI = st.secrets("NEO4J_URI")
+NEO4J_USER = st.secrets("NEO4J_USER")
+NEO4J_PASSWORD = st.secrets("NEO4J_PASSWORD")
+NEO4J_DATABASE = st.secrets("NEO4J_DATABASE")
 
 # Initialize session state
 if 'query_results' not in st.session_state:
