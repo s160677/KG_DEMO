@@ -37,6 +37,10 @@ if 'analysis_completed' not in st.session_state:
     st.session_state.analysis_completed = False
 if 'model_cache_key' not in st.session_state:
     st.session_state.model_cache_key = None
+if 'chart_counter' not in st.session_state:
+    st.session_state.chart_counter = 0
+if 'download_counter' not in st.session_state:
+    st.session_state.download_counter = 0
 
 # Custom CSS
 st.markdown("""
@@ -482,6 +486,10 @@ def display_results(results):
 
     # Feature Importance Visualization
     st.subheader("Feature Importance Analysis")
+
+    # Increment chart counter for unique key
+    st.session_state.chart_counter += 1
+    chart_key = f"feature_importance_chart_{st.session_state.chart_counter}"
     
     # Create a horizontal bar chart for feature importance
     fig = px.bar(
@@ -498,12 +506,12 @@ def display_results(results):
     fig.update_layout(
         xaxis_title="Feature Importance",
         yaxis_title="Features",
-        title_x=0.5,
+        title_x=0.42,
         showlegend=False
     )
     
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+    
     # Downloadable results
     st.subheader("Download Results")
     
@@ -511,22 +519,28 @@ def display_results(results):
     
     with col1:
         # Download predictions
+        st.session_state.download_counter += 1
+        download_key = f"download_predictions_{st.session_state.download_counter}"
         csv_predictions = predictions_df.to_csv(index=False)
         st.download_button(
             label="Download Predictions CSV",
             data=csv_predictions,
             file_name="link_predictions.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key=download_key
         )
     
     with col2:
         # Download feature importance
+        st.session_state.download_counter += 1
+        download_key = f"download_feature_importance_{st.session_state.download_counter}"
         csv_features = feature_importance.to_csv(index=False)
         st.download_button(
             label="Download Feature Importance CSV",
             data=csv_features,
             file_name="feature_importance.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key=download_key
         )
     
     # Classification report
