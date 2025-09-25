@@ -16,15 +16,14 @@ st.set_page_config(
     layout="wide"
 )
 
-# load environment variables locally
-# load_dotenv()
-
 # Neo4j connection configuration
 NEO4J_URI = st.secrets["NEO4J_URI"]
 NEO4J_USER = st.secrets["NEO4J_USER"]
 NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
 NEO4J_DATABASE = st.secrets["NEO4J_DATABASE"]
 
+# Load openai Key
+Open
 # Initialize session state
 if 'query_results' not in st.session_state:
     st.session_state.query_results = None
@@ -37,8 +36,6 @@ if 'last_natural_query' not in st.session_state:
 if 'initial_graph_loaded' not in st.session_state:
     st.session_state.initial_graph_loaded = False
 
-# initialize dotenv
-load_dotenv()
 
 def get_database_schema():
     """Get database schema information for LLM context"""
@@ -114,49 +111,49 @@ def generate_cypher_query(natural_language_query, schema_info):
         
         # Create schema context
         schema_context = f"""
-Database Schema:
-- Node Labels: {', '.join(labels_list)}
-- Relationship Types: {', '.join(rels_list)}
-- Sample Properties: {sample_data[:3] if sample_data else 'No sample data'}
-"""
+                        Database Schema:
+                        - Node Labels: {', '.join(labels_list)}
+                        - Relationship Types: {', '.join(rels_list)}
+                        - Sample Properties: {sample_data[:3] if sample_data else 'No sample data'}
+                        """
         
         # Create the prompt
         prompt = f"""
-You are a Neo4j Cypher query expert. Convert the following natural language query to a valid Cypher query.
+                You are a Neo4j Cypher query expert. Convert the following natural language query to a valid Cypher query.
 
-Database Schema:
-{schema_context}
+                Database Schema:
+                {schema_context}
 
-Natural Language Query: "{natural_language_query}"
+                Natural Language Query: "{natural_language_query}"
 
-When user asks for the neighborhood for one entity (ex. thymosin),use the following template to generate the query:
-```
-MATCH (e:Entity)-[r*1..3]-(neighbor)
-WHERE e.name CONTAINS 'thymosin'
-RETURN e, neighbor, r
-LIMIT 30
-```
+                When user asks for the neighborhood for one entity (ex. thymosin),use the following template to generate the query:
+                ```
+                MATCH (e:Entity)-[r*1..3]-(neighbor)
+                WHERE e.name CONTAINS 'thymosin'
+                RETURN e, neighbor, r
+                LIMIT 30
+                ```
 
-When user asks for the neighborhood between multiple entities (ex. thymosin and prothymosin alpha), use the following template to generate the query:
-```
-MATCH (e1:Entity)-[r*1..3]-(e2:Entity)
-WHERE e1.name CONTAINS 'thymosin' AND e2.name CONTAINS 'prothymosin alpha'
-RETURN e1, r1, e2
-LIMIT 30
-```
+                When user asks for the neighborhood between multiple entities (ex. thymosin and prothymosin alpha), use the following template to generate the query:
+                ```
+                MATCH (e1:Entity)-[r*1..3]-(e2:Entity)
+                WHERE e1.name CONTAINS 'thymosin' AND e2.name CONTAINS 'prothymosin alpha'
+                RETURN e1, r1, e2
+                LIMIT 30
+                ```
 
-Instructions:
-1. Return ONLY the Cypher query, no explanations
-2. Use LIMIT 30 to keep results manageable unless the user specifies a different limit
-3. Use proper Cypher syntax
-4. If the query is ambiguous, make reasonable assumptions based on the schema
-5. Focus on returning nodes and relationships that can be visualized
+                Instructions:
+                1. Return ONLY the Cypher query, no explanations
+                2. Use LIMIT 30 to keep results manageable unless the user specifies a different limit
+                3. Use proper Cypher syntax
+                4. If the query is ambiguous, make reasonable assumptions based on the schema
+                5. Focus on returning nodes and relationships that can be visualized
 
-Cypher Query:
-"""
+                Cypher Query:
+                """
         
         # Use OpenAI API (you can replace with other LLMs)
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
