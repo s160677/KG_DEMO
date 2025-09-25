@@ -22,8 +22,6 @@ NEO4J_USER = st.secrets["NEO4J_USER"]
 NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
 NEO4J_DATABASE = st.secrets["NEO4J_DATABASE"]
 
-# Load openai Key
-Open
 # Initialize session state
 if 'query_results' not in st.session_state:
     st.session_state.query_results = None

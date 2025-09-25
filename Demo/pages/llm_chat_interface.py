@@ -170,7 +170,7 @@ def initialize_graphrag():
             driver.verify_connectivity()
             
             # Initialize embedder
-            embedder = OpenAIEmbeddings(model="text-embedding-3-small", api_key=os.getenv("OPENAI_API_KEY"))
+            embedder = OpenAIEmbeddings(model="text-embedding-3-small", api_key=st.secrets["OPENAI_API_KEY"])
             
             # Define retrieval query
             retrieval_query = """
