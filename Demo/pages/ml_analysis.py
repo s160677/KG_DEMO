@@ -21,11 +21,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# Neo4j connection details
-NEO4J_URI = "neo4j+s://29c0fe72.databases.neo4j.io"
-NEO4J_USER = "29c0fe72"
-NEO4J_PASSWORD = "D70-cnMF4HDGbhSIHBVdw9KOhVWlGmPauBN7EoEF-Z4"
-NEO4J_DATABASE = "29c0fe72"   # change if you use another db
+# Neo4j connection configuration
+NEO4J_URI = st.secrets["NEO4J_URI"]
+NEO4J_USER = st.secrets["NEO4J_USER"]
+NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
+NEO4J_DATABASE = st.secrets["NEO4J_DATABASE"]
 
 URI = NEO4J_URI
 AUTH = (NEO4J_USER, NEO4J_PASSWORD)
