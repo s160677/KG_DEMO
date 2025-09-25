@@ -11,9 +11,8 @@ import random
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import dotenv
-import os
-from dotenv import load_dotenv
+import pickle
+import hashlib
 
 # Page configuration
 st.set_page_config(
@@ -23,13 +22,21 @@ st.set_page_config(
 )
 
 # Neo4j connection details
-NEO4J_URI = st.secrets["NEO4J_URI"]
-NEO4J_USER = st.secrets["NEO4J_USER"]
-NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
-NEO4J_DATABASE = st.secrets["NEO4J_DATABASE"]
+NEO4J_URI = "neo4j+s://29c0fe72.databases.neo4j.io"
+NEO4J_USER = "29c0fe72"
+NEO4J_PASSWORD = "D70-cnMF4HDGbhSIHBVdw9KOhVWlGmPauBN7EoEF-Z4"
+NEO4J_DATABASE = "29c0fe72"   # change if you use another db
 
 URI = NEO4J_URI
 AUTH = (NEO4J_USER, NEO4J_PASSWORD)
+
+# Initialize session state for persistent results
+if 'ml_analysis_results' not in st.session_state:
+    st.session_state.ml_analysis_results = None
+if 'analysis_completed' not in st.session_state:
+    st.session_state.analysis_completed = False
+if 'model_cache_key' not in st.session_state:
+    st.session_state.model_cache_key = None
 
 # Custom CSS
 st.markdown("""
@@ -65,17 +72,25 @@ st.markdown("""
         border-radius: 5px;
         border-left: 4px solid #28a745;
     }
+    .results-section {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 4px solid #667eea;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Header
 st.markdown("""
 <div class="main-header">
-    <h1>📊 ML Analytics - Link Prediction</h1>
+    <h1>ML Analytics - Link Prediction</h1>
     <h3>Advanced Machine Learning Analysis for Biomedical Knowledge Graphs</h3>
 </div>
 """, unsafe_allow_html=True)
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def extract_graph_features():
     """Extract features from the Neo4j graph for link prediction"""
     
@@ -248,15 +263,16 @@ def create_link_prediction_features(positive_edges, negative_edges, nodes):
     
     return np.array(features), np.array(labels)
 
+@st.cache_data(ttl=3600)  # Cache for 1 hour
 def train_link_prediction_model():
     """Train and evaluate the link prediction model"""
     
-    st.info("🔄 Extracting graph features...")
+    st.info("Extracting graph features...")
     positive_edges, negative_edges, nodes = extract_graph_features()
     
     st.success(f"✅ Extracted {len(positive_edges)} positive examples and {len(negative_edges)} negative examples")
     
-    st.info("🔄 Creating feature matrix...")
+    st.info("Creating feature matrix...")
     X, y = create_link_prediction_features(positive_edges, negative_edges, nodes)
     
     st.success(f"✅ Created feature matrix with shape: {X.shape}")
@@ -272,7 +288,7 @@ def train_link_prediction_model():
     X_test_scaled = scaler.transform(X_test)
     
     # Train logistic regression model
-    st.info("🔄 Training logistic regression model...")
+    st.info("Training logistic regression model...")
     model = LogisticRegression(random_state=42, max_iter=1000)
     model.fit(X_train_scaled, y_train)
     
@@ -409,12 +425,129 @@ def predict_new_links(model, scaler, nodes, top_k=10):
     
     return predictions_df
 
+def display_results(results):
+    """Display the stored results"""
+    if results is None:
+        return
+    
+    model, scaler, feature_importance, report, roc_auc, nodes, predictions_df = results
+    
+    st.success("🎉 Link prediction analysis completed successfully!")
+    
+    # Model performance metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>ROC AUC Score</h3>
+            <h2>{roc_auc:.4f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        accuracy = report['accuracy']
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>Accuracy</h3>
+            <h2>{accuracy:.4f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        f1_score = report['weighted avg']['f1-score']
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>F1 Score</h3>
+            <h2>{f1_score:.4f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Top predictions
+    st.subheader(f"🔮 Top {len(predictions_df)} Predicted New Links")
+    
+    # Create a more visually appealing predictions display
+    for idx, row in predictions_df.iterrows():
+        st.markdown(f"""
+        <div class="prediction-card">
+            <strong>#{row['Rank']}</strong> &nbsp;&nbsp;
+            <strong>{row['Source']}</strong> → <strong>{row['Target']}</strong>
+            <div style="float: right;">
+                <span style="background: #667eea; color: white; padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.9rem;">
+                    {row['Probability']:.4f}
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Feature Importance Visualization
+    st.subheader("Feature Importance Analysis")
+    
+    # Create a horizontal bar chart for feature importance
+    fig = px.bar(
+        feature_importance.head(10),  # Show top 10 features
+        x='importance',
+        y='feature',
+        orientation='h',
+        title="Link Prediction Features",
+        color='importance',
+        color_continuous_scale='viridis',
+        height=500
+    )
+    
+    fig.update_layout(
+        xaxis_title="Feature Importance",
+        yaxis_title="Features",
+        title_x=0.5,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Downloadable results
+    st.subheader("Download Results")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Download predictions
+        csv_predictions = predictions_df.to_csv(index=False)
+        st.download_button(
+            label="Download Predictions CSV",
+            data=csv_predictions,
+            file_name="link_predictions.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Download feature importance
+        csv_features = feature_importance.to_csv(index=False)
+        st.download_button(
+            label="Download Feature Importance CSV",
+            data=csv_features,
+            file_name="feature_importance.csv",
+            mime="text/csv"
+        )
+    
+    # Classification report
+    with st.expander("📋 Detailed Classification Report"):
+        st.json(report)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # Main app
 def main():
     st.sidebar.title("🔧 Model Configuration")
     
     # Model parameters
     top_k = st.sidebar.slider("Number of predictions to show", 5, 20, 10)
+    
+    # Clear results button
+    if st.sidebar.button("Clear Results", type="secondary"):
+        st.session_state.ml_analysis_results = None
+        st.session_state.analysis_completed = False
+        st.session_state.model_cache_key = None
+        st.rerun()
     
     # Connection test
     try:
@@ -425,6 +558,12 @@ def main():
         st.sidebar.error(f"❌ Failed to connect to Neo4j: {str(e)}")
         st.error("Cannot connect to Neo4j database. Please check your connection settings.")
         return
+    
+    # Display stored results if available
+    if st.session_state.ml_analysis_results is not None:
+        st.markdown("## 📊 Previous Analysis Results")
+        display_results(st.session_state.ml_analysis_results)
+        st.markdown("---")
     
     # Run analysis button
     if st.sidebar.button("🚀 Run Link Prediction Analysis", type="primary"):
@@ -449,83 +588,15 @@ def main():
             progress_bar.progress(100)
             status_text.text("Analysis complete!")
             
+            # Store results in session state
+            st.session_state.ml_analysis_results = (
+                model, scaler, feature_importance, report, roc_auc, nodes, predictions_df
+            )
+            st.session_state.analysis_completed = True
+            
             # Display results
-            st.success("🎉 Link prediction analysis completed successfully!")
-            
-            # Model performance metrics
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h3>ROC AUC Score</h3>
-                    <h2>{roc_auc:.4f}</h2>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                accuracy = report['accuracy']
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h3>Accuracy</h3>
-                    <h2>{accuracy:.4f}</h2>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                f1_score = report['weighted avg']['f1-score']
-                st.markdown(f"""
-                <div class="metric-card">
-                    <h3>F1 Score</h3>
-                    <h2>{f1_score:.4f}</h2>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Top predictions
-            st.subheader(f"🔮 Top {top_k} Predicted New Links")
-            
-            # Create a more visually appealing predictions display
-            for idx, row in predictions_df.iterrows():
-                st.markdown(f"""
-                <div class="prediction-card">
-                    <strong>#{row['Rank']}</strong> &nbsp;&nbsp;
-                    <strong>{row['Source']}</strong> → <strong>{row['Target']}</strong>
-                    <div style="float: right;">
-                        <span style="background: #667eea; color: white; padding: 0.2rem 0.5rem; border-radius: 10px; font-size: 0.9rem;">
-                            {row['Probability']:.4f}
-                        </span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Downloadable results
-            st.subheader("📥 Download Results")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Download predictions
-                csv_predictions = predictions_df.to_csv(index=False)
-                st.download_button(
-                    label="Download Predictions CSV",
-                    data=csv_predictions,
-                    file_name="link_predictions.csv",
-                    mime="text/csv"
-                )
-            
-            with col2:
-                # Download feature importance
-                csv_features = feature_importance.to_csv(index=False)
-                st.download_button(
-                    label="Download Feature Importance CSV",
-                    data=csv_features,
-                    file_name="feature_importance.csv",
-                    mime="text/csv"
-                )
-            
-            # Classification report
-            with st.expander("📋 Detailed Classification Report"):
-                st.json(report)
+            st.markdown("## 📊 New Analysis Results")
+            display_results(st.session_state.ml_analysis_results)
                 
         except Exception as e:
             st.error(f"An error occurred during analysis: {str(e)}")
@@ -535,7 +606,8 @@ def main():
             progress_bar.empty()
             status_text.empty()
     
-    else:
+    # Only show getting started section if no analysis has been completed
+    elif st.session_state.ml_analysis_results is None:
         # Instructions
         st.markdown("""
         ## 🚀 Getting Started
@@ -547,11 +619,12 @@ def main():
         
         - 🔬 **Discover new drug-disease relationships**
         - 🧬 **Identify potential gene-protein interactions**
-        - 💊 **Suggest novel therapeutic targets**
+        - 🎯 **Suggest novel therapeutic targets**
         - 📚 **Uncover hidden research connections**
         
         Click **"Run Link Prediction Analysis"** in the sidebar to start!
         """)
+
 
 if __name__ == "__main__":
     main()
