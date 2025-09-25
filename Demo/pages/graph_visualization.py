@@ -196,7 +196,33 @@ def execute_cypher_query(query, limit=100):
     except Exception as e:
         return False, None, f"❌ Query failed: {str(e)}"
 
-def create_visualization_graph(neo4j_result) -> VisualizationGraph:
+def extract_entities_from_cypher(cypher_query):
+    """Extract entity names from Cypher query WHERE clauses"""
+    import re
+    
+    entities = []
+    
+    # Pattern to match WHERE e.name CONTAINS 'entity_name'
+    pattern1 = r"WHERE\s+\w+\.name\s+CONTAINS\s+'([^']+)'"
+    matches1 = re.findall(pattern1, cypher_query, re.IGNORECASE)
+    entities.extend(matches1)
+    
+    # Pattern to match WHERE e1.name CONTAINS 'entity1' AND e2.name CONTAINS 'entity2'
+    pattern2 = r"AND\s+\w+\.name\s+CONTAINS\s+'([^']+)'"
+    matches2 = re.findall(pattern2, cypher_query, re.IGNORECASE)
+    entities.extend(matches2)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_entities = []
+    for entity in entities:
+        if entity.lower() not in seen:
+            seen.add(entity.lower())
+            unique_entities.append(entity)
+    
+    return unique_entities
+
+def create_visualization_graph(neo4j_result, requested_entities=None) -> VisualizationGraph:
     """Create visualization graph from Neo4j result"""
     try:
         VG = from_neo4j(neo4j_result)
@@ -204,6 +230,12 @@ def create_visualization_graph(neo4j_result) -> VisualizationGraph:
         # set node label property to name
         for node in VG.nodes:
             node.caption = node.properties.get("name") or ", ".join(node.labels)
+
+            if requested_entities:
+                for entity in requested_entities:
+                    if entity.lower() in node.caption.lower():
+                        VG.color_nodes(field="caption")
+
         return VG
     except Exception as e:
         st.error(f"Error creating visualization: {str(e)}")
@@ -277,8 +309,11 @@ with st.sidebar:
                             st.session_state.query_results = result
                             st.success(exec_message)
                             
+                            # extract entities from cypher query
+                            requested_entities = extract_entities_from_cypher(cypher_query)
                             # Create visualization graph
-                            VG = create_visualization_graph(result)
+                            VG = create_visualization_graph(result, requested_entities)
+                            
                             if VG:
                                 st.session_state.visualization_graph = VG
                                 st.success("✅ Visualization created successfully!")
