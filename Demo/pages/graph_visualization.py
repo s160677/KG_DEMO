@@ -34,6 +34,8 @@ if 'last_natural_query' not in st.session_state:
 if 'initial_graph_loaded' not in st.session_state:
     st.session_state.initial_graph_loaded = False
 
+# initialize dotenv
+load_dotenv()
 
 def get_database_schema():
     """Get database schema information for LLM context"""
@@ -42,8 +44,8 @@ def get_database_schema():
             driver.verify_connectivity()
             
             # Get node labels
-            labels_result = driver.execute_query(
-                "CALL db.labels()",
+            name_result = driver.execute_query(
+                "MATCH (n) RETURN n.name as name",
                 database_=NEO4J_DATABASE,
                 routing_=RoutingControl.READ,
                 result_transformer_=Result.data,
@@ -57,15 +59,15 @@ def get_database_schema():
                 result_transformer_=Result.data,
             )
             
-            # Get sample nodes and relationships for context
+            # Get sample entities and relationships for context
             sample_nodes = driver.execute_query(
-                "MATCH (n) RETURN labels(n) as labels, keys(n) as properties LIMIT 10",
+                "MATCH (n) RETURN labels(n) as labels, properties(n) as properties LIMIT 10",
                 database_=NEO4J_DATABASE,
                 routing_=RoutingControl.READ,
                 result_transformer_=Result.data,
             )
             
-            return True, labels_result, rels_result, sample_nodes, None
+            return True, name_result, rels_result, sample_nodes, None
     except Exception as e:
         return False, None, None, None, f"❌ Schema query failed: {str(e)}"
 
@@ -104,54 +106,54 @@ def generate_cypher_query(natural_language_query, schema_info):
             return False, None, error
         
         # Build schema context
-        labels_list = [label['label'] for label in labels] if labels else []
+        labels_list = [label['name'] for label in labels] if labels else []
         rels_list = [rel['relationshipType'] for rel in rels] if rels else []
         
         # Create schema context
         schema_context = f"""
-                        Database Schema:
-                        - Node Labels: {', '.join(labels_list)}
-                        - Relationship Types: {', '.join(rels_list)}
-                        - Sample Properties: {sample_data[:3] if sample_data else 'No sample data'}
-                        """
+                    Database Schema:
+                    - Node Labels: {', '.join(labels_list)}
+                    - Relationship Types: {', '.join(rels_list)}
+                    - Sample Properties: {sample_data[:3] if sample_data else 'No sample data'}
+                    """
         
         # Create the prompt
         prompt = f"""
-                You are a Neo4j Cypher query expert. Convert the following natural language query to a valid Cypher query.
+            You are a Neo4j Cypher query expert. Convert the following natural language query to a valid Cypher query.
 
-                Database Schema:
-                {schema_context}
+            Database Schema:
+            {schema_context}
 
-                Natural Language Query: "{natural_language_query}"
+            Natural Language Query: "{natural_language_query}"
 
-                When user asks for the neighborhood for one entity (ex. thymosin),use the following template to generate the query:
-                ```
-                MATCH (e:Entity)-[r*1..3]-(neighbor)
-                WHERE e.name CONTAINS 'thymosin'
-                RETURN e, neighbor, r
-                LIMIT 30
-                ```
+            When user asks about an entity for example thymosin, show them the neighborhood. Use the following template to generate the query:
+            ```
+            MATCH (e:Entity)-[r*1..3]-(neighbor)
+            WHERE e.name CONTAINS 'thymosin'
+            RETURN e, neighbor, r
+            LIMIT 30
+            ```
 
-                When user asks for the neighborhood between multiple entities (ex. thymosin and prothymosin alpha), use the following template to generate the query:
-                ```
-                MATCH (e1:Entity)-[r*1..3]-(e2:Entity)
-                WHERE e1.name CONTAINS 'thymosin' AND e2.name CONTAINS 'prothymosin alpha'
-                RETURN e1, r1, e2
-                LIMIT 30
-                ```
+            When user asks for multiple entities for example thymosin and prothymosin alpha, use the following template to generate the query and show the neighborhood between the entities:
+            ```
+            MATCH (e1:Entity)-[r*1..3]-(e2:Entity)
+            WHERE e1.name CONTAINS 'thymosin' AND e2.name CONTAINS 'prothymosin alpha'
+            RETURN e1, r1, e2
+            LIMIT 30
+            ```
 
-                Instructions:
-                1. Return ONLY the Cypher query, no explanations
-                2. Use LIMIT 30 to keep results manageable unless the user specifies a different limit
-                3. Use proper Cypher syntax
-                4. If the query is ambiguous, make reasonable assumptions based on the schema
-                5. Focus on returning nodes and relationships that can be visualized
+            Instructions:
+            1. Return ONLY the Cypher query, no explanations
+            2. Use LIMIT 30 to keep results manageable unless the user specifies a different limit
+            3. Use proper Cypher syntax
+            4. If the query is ambiguous, make reasonable assumptions based on the schema and return at least the entities neighborhood
+            5. Focus on returning nodes and relationships that can be visualized
 
-                Cypher Query:
-                """
+            Cypher Query:
+            """
         
         # Use OpenAI API (you can replace with other LLMs)
-        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -283,8 +285,7 @@ with st.sidebar:
         st.info("You can get an API key from: https://platform.openai.com/api-keys")
     
     natural_query = st.text_area(
-        "Describe what you want to find:",
-        value=st.session_state.last_natural_query,
+        "Enter one or more entities and relationships to visualize:",
         height=100,
         help="Describe what you want to find in the graph"
     )
@@ -313,7 +314,6 @@ with st.sidebar:
                             requested_entities = extract_entities_from_cypher(cypher_query)
                             # Create visualization graph
                             VG = create_visualization_graph(result, requested_entities)
-                            
                             if VG:
                                 st.session_state.visualization_graph = VG
                                 st.success("✅ Visualization created successfully!")
